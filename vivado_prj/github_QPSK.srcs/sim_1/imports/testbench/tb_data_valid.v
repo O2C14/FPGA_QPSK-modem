@@ -15,36 +15,35 @@ module tb_data_valid();
     initial begin
         clk = 1'b1;
         rst_n <= 1'b0;
-        //帧头和校验和都正确的数据
         data <= 40'b1100_1100_0001_0111_0001_1000_0001_1001_0001_0100;
         sync_flag <= 1'b0;
         ser_i <= 1'b0;
     #2000
         rst_n <= 1'b1;
         for(i=0;i<=39;i=i+1) begin
-            #8000
-            ser_i <= data[39 - i]; //高位先入
+            #500  // 比特间隔 = 500ns (2Mbps)
+            ser_i <= data[39 - i]; // 高位先入
             sync_flag <= 1'b1;
-            #2000  //sync_flag设置为持续一个周期
+            #62.5  // sync_flag持续一个16MHz周期
             sync_flag <= 1'b0;
         end
     end
     
-    always #1000 clk = ~clk;  //500kHz
+    always #31.250 clk = ~clk;  // 16MHz
         
     
     data_valid 
     #(.HEADER(8'b1100_1100))
     valid_data_inst
     (
-        .clk            (clk            ),  //500KHz
+        .clk            (clk            ),
         .rst_n          (rst_n          ),
-        .ser_i          (ser_i          ),  //从iq_comb模块输入的串行数据
-        .sync_flag      (sync_flag      ),  //同步标志
+        .ser_i          (ser_i          ),
+        .sync_flag      (sync_flag      ),
  
-        .header_flag    (header_flag    ),  //侦测到正确的帧头
-        .valid_flag     (valid_flag     ),  //帧头和校验和都正确标志，代表有效数据
-        .valid_data_o   (valid_data_o   )   //将有效数据进行并行输出
+        .header_flag    (header_flag    ),
+        .valid_flag     (valid_flag     ),
+        .valid_data_o   (valid_data_o   )
     );
 
 endmodule

@@ -14,16 +14,17 @@ module tb_qpsk_clk_top();
         rst_n <= 1'b1;
     end
     
-    always #10 clk = ~clk;
+    always #31.250 clk = ~clk; // 16MHz时钟
     
     qpsk_clk_top
-    #(.HEADER(8'hcc),    //帧头
-      .CNT_MAX(26'd49_999_99)) //仿真中100ms更新一次数据
+    #(
+        .SYM_FILE("E:/CEVA_BT5.2/FPGA_QPSK-modem/matlab/edrsym.txt"),
+        .MAX_SYMS(256)
+    )
     qpsk_clk_top_inst
     (
-        .clk            (clk    ),  //50MHz
+        .clk            (clk    ),
         .rst_n          (rst_n  ),
-
         .sel            (sel    ),
         .dig            (dig    )
     );

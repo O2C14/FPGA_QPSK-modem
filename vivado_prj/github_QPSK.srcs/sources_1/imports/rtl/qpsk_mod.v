@@ -1,133 +1,105 @@
-`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// pi/4-DQPSK 调制器 (2-bit 符号输入)
+//
+// EDR2: 16MHz clk
+//   输入: [1:0] sym_in (dibit) + sym_en (1MHz 符号使能)
+//   处理: mapper → RCOS(16MHz) → DDS(1MHz@16MHz) → 上变频 → qpsk
+//////////////////////////////////////////////////////////////////////////////////
 module qpsk_mod
     (
-        input wire          clk     ,
-        input wire          rst_n   ,
-        input wire  [39:0]  para_in ,
-        
-        output wire [27:0]  qpsk    
+        input wire          clk         ,  // 16MHz 主时钟
+        input wire          rst_n       ,
+        input wire [1:0]    sym_in      ,  // 2-bit dibit 符号
+        input wire          sym_en      ,  // 符号使能 (1周期脉冲, 1MHz)
+
+        output wire [27:0]  qpsk
     );
-    
-    wire        ser_data    ;
-    
-    wire        clk_sam     ; 
-    
-    wire [1:0]  I           ;
-    wire [1:0]  Q           ;
-    wire [23:0] I_filtered  ;
-    wire [23:0] Q_filtered  ;
+
+    // pi/4-DQPSK mapper 输出 (符号率 1MHz, zero-order hold)
+    wire [7:0]  I_base      ;  // 8bit signed I
+    wire [7:0]  Q_base      ;  // 8bit signed Q
+    wire        sym_valid   ;  // 符号有效 (1MHz)
+
+    // 脉冲成形滤波器输出
+    wire [22:0] I_filtered  ;
+    wire [22:0] Q_filtered  ;
+
+    // 载波 (1MHz, 16MHz 采样率)
+    wire [7:0]  carry_cos   ;
     wire [7:0]  carry_sin   ;
-    wire [7:0]  carry_cos   ;   
+
+    // 上变频输出
     wire [27:0] qpsk_i      ;
     wire [27:0] qpsk_q      ;
-    
-    //产生1MHz采样时钟
-    sam_clk_gen sam_clk_gen_inst(
-            .clk        (clk    ),  //50MHz
-            .rst_n      (rst_n  ),
 
-            .clk_o      (clk_sam)
-        );
-    
-    
-    
-    //串并转换
-    para2ser 
-    #(.DIV(14'd5000))
-    para2ser_inst
-    (
-        .clk            (clk        ),
-        .rst_n          (rst_n      ),
-        .para_i         (para_in    ),
-
-        .ser_o          (ser_data   )
-    );
-    
-    //I/Q分流
-    iq_div
-    #(  .IQ_DIV_MAX(8'd50), //采样速率为clk/IQ_DIV_MAX
-        .BIT_SAMPLE(8'd100)  //每个bit采样点数
-    )
-    iq_div_inst
-    (
+    // ---- pi/4-DQPSK 差分编码+星座映射 ----
+    pi4_dqpsk_mapper pi4_dqpsk_mapper_inst (
         .clk        (clk        ),
         .rst_n      (rst_n      ),
-        .ser_i      (ser_data   ),
-
-        .I          (I      ), //有符号双极性输出
-        .Q          (Q      )
+        .sym_in     (sym_in     ),
+        .sym_en     (sym_en     ),
+        .I          (I_base     ),
+        .Q          (Q_base     ),
+        .sym_valid  (sym_valid  )
     );
-    
-    //I路成形滤波
+
+    // ---- I路成形滤波 (custom rcosfilter, 1-cycle delay) ----
     rcosfilter rcosfilter_I (
-        .aclk(clk_sam),                    // input wire aclk
-        .s_axis_data_tvalid(rst_n),        // input wire s_axis_data_tvalid
-        .s_axis_data_tready(),             // output wire s_axis_data_tready
-        .s_axis_data_tdata({{6{I[1]}},I}), // input wire [7 : 0] s_axis_data_tdata
-        .m_axis_data_tvalid(),             // output wire m_axis_data_tvalid
-        .m_axis_data_tdata(I_filtered)     // output wire [23 : 0] m_axis_data_tdata
+        .aclk(clk),
+        .s_axis_data_tvalid(rst_n),
+        .s_axis_data_tready(),
+        .s_axis_data_tdata(I_base),
+        .m_axis_data_tvalid(),
+        .m_axis_data_tdata(I_filtered)
     );
 
-    //Q路成形滤波
+    // ---- Q路成形滤波 ----
     rcosfilter rcosfilter_Q (
-        .aclk(clk_sam),                    // input wire aclk
-        .s_axis_data_tvalid(rst_n),        // input wire s_axis_data_tvalid
-        .s_axis_data_tready(),             // output wire s_axis_data_tready
-        .s_axis_data_tdata({{6{Q[1]}},Q}), // input wire [7 : 0] s_axis_data_tdata
-        .m_axis_data_tvalid(),             // output wire m_axis_data_tvalid
-        .m_axis_data_tdata(Q_filtered)     // output wire [23 : 0] m_axis_data_tdata
-    );  
-    
-    //产生cos波形
-    dds_cos dds_demo_cos_inst (
-        .aclk(clk_sam),                    // input wire aclk
-        .aresetn(rst_n),                   // input wire aresetn
-        .s_axis_phase_tvalid(1'b1),        // input wire s_axis_phase_tvalid
-        .s_axis_phase_tdata(24'hccccc),    // input wire [23 : 0] s_axis_phase_tdata, 24'hccccc对应50kHz频率
-        .m_axis_data_tvalid(),             // output wire m_axis_data_tvalid
-        .m_axis_data_tdata(carry_cos),     // output wire [7 : 0] m_axis_data_tdata
-        .m_axis_phase_tvalid(),            // output wire m_axis_phase_tvalid
-        .m_axis_phase_tdata()              // output wire [23 : 0] m_axis_phase_tdata
+        .aclk(clk),
+        .s_axis_data_tvalid(rst_n),
+        .s_axis_data_tready(),
+        .s_axis_data_tdata(Q_base),
+        .m_axis_data_tvalid(),
+        .m_axis_data_tdata(Q_filtered)
     );
-    
-    
-    //产生sin波形
-    dds_sin dds_demo_sin_inst (
-        .aclk(clk_sam),                     // input wire aclk
-        .aresetn(rst_n),                    // input wire aresetn
-        .s_axis_phase_tvalid(1'b1),         // input wire s_axis_phase_tvalid
-        .s_axis_phase_tdata(24'hccccc),     // input wire [23 : 0] s_axis_phase_tdata
-        .m_axis_data_tvalid(),              // output wire m_axis_data_tvalid
-        .m_axis_data_tdata(carry_sin),      // output wire [7 : 0] m_axis_data_tdata
-        .m_axis_phase_tvalid(),             // output wire m_axis_phase_tvalid
-        .m_axis_phase_tdata()               // output wire [23 : 0] m_axis_phase_tdata
-    );    
 
-
-    
-    //I路滤波后与cos载波相乘, 成形滤波结果低位截断、相当于增益降低
-    mul_mod mul_mod_I
-    (
-        .CLK(clk_sam),                      // input wire CLK
-        .A(I_filtered[20:1]),               // input wire [19 : 0] A
-        .B(carry_cos     ),                 // input wire [7 : 0] B
-        .P(qpsk_i)                          // output wire [27 : 0] P
+    // ---- DDS: 1MHz 载波 cos (16MHz 采样率) ----
+    dds_cos dds_cos_inst (
+        .aclk(clk),
+        .aresetn(rst_n),
+        .m_axis_data_tvalid(),
+        .m_axis_data_tdata(carry_cos),
+        .m_axis_phase_tvalid(),
+        .m_axis_phase_tdata()
     );
-        
-       
-    //Q路滤波后与sin载波相乘
-    //位宽配置同I路一致
-    mul_mod mul_mod_Q
-    (
-        .CLK(clk_sam),                      // input wire CLK
-        .A(Q_filtered[20:1]),               // input wire [19 : 0] A
-        .B(carry_sin     ),                 // input wire [7 : 0] B
-        .P(qpsk_q)                          // output wire [27 : 0] P
-    );  
-      
-    
-    //IQ两路信号叠加
-    assign qpsk = qpsk_i + qpsk_q; 
-    
-    
+
+    // ---- DDS: 1MHz 载波 sin ----
+    dds_sin dds_sin_inst (
+        .aclk(clk),
+        .aresetn(rst_n),
+        .m_axis_data_tvalid(),
+        .m_axis_data_tdata(carry_sin),
+        .m_axis_phase_tvalid(),
+        .m_axis_phase_tdata()
+    );
+
+    //---- I路上变频 ----
+    mul_mod mul_mod_I (
+        .CLK(clk),
+        .A(I_filtered[22:3]),
+        .B(carry_cos),
+        .P(qpsk_i)
+    );
+
+    //---- Q路上变频 ----
+    mul_mod mul_mod_Q (
+        .CLK(clk),
+        .A(Q_filtered[22:3]),
+        .B(carry_sin),
+        .P(qpsk_q)
+    );
+
+    //---- IQ叠加 ----
+    assign qpsk = qpsk_i + qpsk_q;
+
 endmodule

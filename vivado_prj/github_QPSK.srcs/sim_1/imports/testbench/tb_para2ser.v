@@ -6,6 +6,7 @@ module tb_para2ser();
     reg [39:0]  para_i  ;
     
     wire        ser_o   ;
+    wire        bit_valid;
     
     initial begin
         clk = 1'b1;
@@ -16,16 +17,17 @@ module tb_para2ser();
     
     end
     
-    always #10 clk = ~clk; //50Mhz时钟
+    always #31.250 clk = ~clk; // 16MHz时钟
 
     para2ser
-    #(.DIV(14'd12500))
+    #(.DIV(4'd8))  // 16MHz/8 = 2Mbps
     para2ser_inst
     (
         .clk            (clk    ),
         .rst_n          (rst_n  ),
         .para_i         (para_i ),
 
-        .ser_o          (ser_o  )
+        .ser_o          (ser_o  ),
+        .bit_valid      (bit_valid)
     );
 endmodule

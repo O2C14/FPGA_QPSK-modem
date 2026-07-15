@@ -15,13 +15,12 @@ module tb_dec2bcd();
         rst_n <= 1'b1;
     end
     
-    always #10 clk = ~clk;
+    always #31.250 clk = ~clk; // 16MHz
     
     dec2bcd dec2bcd_inst(
         .clk        (clk    ),
         .rst_n      (rst_n  ),
         .dec_in     (data_i ),  
-
         .unit       (unit   ),
         .ten        (ten    )   
     );
