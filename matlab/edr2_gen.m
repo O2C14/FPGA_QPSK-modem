@@ -26,7 +26,7 @@ payloadLength = getPayloadLength(bluetoothCfg);
 filterSpan = 8*any(strcmp(bluetoothCfg.Mode,{'EDR2M','EDR3M'}));
 packetDuration = bluetoothPacketDuration(bluetoothCfg.Mode,bluetoothCfg.PacketType,payloadLength);
 waveform = waveform(1:(packetDuration+filterSpan)*bluetoothCfg.SamplesPerSymbol);
-waveform = waveform(2016+80+1:(packetDuration+filterSpan)*bluetoothCfg.SamplesPerSymbol)
+waveform = waveform(2016+80+1:(packetDuration+filterSpan)*bluetoothCfg.SamplesPerSymbol);
 Fs = 1.6e+07; 								 % 以 Hz 为单位指定波形的采样率
 
 
